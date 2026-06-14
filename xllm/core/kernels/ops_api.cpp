@@ -111,7 +111,14 @@ void apply_rotary(RotaryParams& params) {
     LOG(FATAL) << "apply_rotary: neither cos_sin nor cos/sin "
                   "provided; cannot infer cos_sin.";
   }
-  cuda::rotary_embedding(pos_ids, params.q, params.k, cos_sin, is_neox);
+  // MLA single-tensor rotary leaves params.k default-constructed (undefined).
+  // Passing an undefined torch::Tensor where std::optional<Tensor> is expected
+  // yields a non-empty optional, which makes the kernel's size check
+  // dereference an undefined key and fail. Treat undefined k as "no key".
+  std::optional<torch::Tensor> key_opt =
+      params.k.defined() ? std::optional<torch::Tensor>(params.k)
+                         : std::nullopt;
+  cuda::rotary_embedding(pos_ids, params.q, key_opt, cos_sin, is_neox);
 #elif defined(USE_ILU)
   torch::Tensor ilu_cos_sin;
   if (params.precomputed_cos_sin.defined()) {

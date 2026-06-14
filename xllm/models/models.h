@@ -103,6 +103,7 @@ limitations under the License.
 #elif defined(USE_MUSA)
 #include "llm/musa/qwen3.h"  // IWYU pragma: keep
 #elif defined(USE_DCU)
+#include "llm/deepseek_v3.h"
 #include "llm/qwen2.h"
 #include "llm/qwen3.h"
 #include "llm/qwen3_moe.h"

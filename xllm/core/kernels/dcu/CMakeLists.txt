@@ -49,7 +49,38 @@ set(DCU_LOCAL_HIP_SOURCES
   ${CMAKE_SOURCE_DIR}/xllm/core/kernels/dcu/attention_runner.cpp
   ${CMAKE_SOURCE_DIR}/xllm/core/kernels/dcu/piecewise_graphs.cpp
   ${CMAKE_SOURCE_DIR}/xllm/core/kernels/dcu/global_capture_instance.cpp
+  ${CMAKE_SOURCE_DIR}/xllm/core/kernels/dcu/flash_mla_adapter.cpp
 )
+
+# ---------------------------------------------------------------------------
+# flash-mla native extension (deepseek-ai/FlashMLA).
+#
+# Imported as a thin shared library so the DCU MLA decode adapter can call its
+# exported C++ symbols directly (see kernels/dcu/flash_mla_adapter.cpp). The
+# DCU image is expected to ship flash_mla; fail hard if it is missing rather
+# than silently disabling MLA.
+# ---------------------------------------------------------------------------
+if(NOT TARGET flash_mla)
+  if(NOT FLASH_MLA_LIB_DIR)
+    set(FLASH_MLA_LIB_DIR "/usr/local/lib/python3.10/dist-packages/flash_mla")
+  endif()
+  set(FLASH_MLA_LIB_DIR
+      "${FLASH_MLA_LIB_DIR}"
+      CACHE PATH "Directory containing the flash_mla cuda.*.so native extension")
+
+  file(GLOB _flash_mla_so_paths "${FLASH_MLA_LIB_DIR}/cuda.*.so")
+  if(_flash_mla_so_paths)
+    list(GET _flash_mla_so_paths 0 _flash_mla_so)
+    add_library(flash_mla SHARED IMPORTED)
+    set_target_properties(flash_mla PROPERTIES IMPORTED_LOCATION "${_flash_mla_so}")
+    set(_flash_mla_rpath "${FLASH_MLA_LIB_DIR}")
+    message(STATUS "Found flash_mla: ${_flash_mla_so}")
+  else()
+    message(FATAL_ERROR
+            "flash_mla cuda.*.so not found under ${FLASH_MLA_LIB_DIR}. "
+            "Set -DFLASH_MLA_LIB_DIR=<dir> to the flash_mla install dir.")
+  endif()
+endif()
 
 hipify_sources_target(
   DCU_GENERATED_SRCS
@@ -78,9 +109,16 @@ cc_library(
     torch
     glog::glog
     :platform
+    flash_mla
 )
 
 add_dependencies(dcu_kernels ${DCU_HIPIFY_TARGET})
+
+# flash_mla ships outside the standard loader path; keep its dir on the rpath so
+# the final xllm binary can resolve cuda.*.so at runtime.
+if(DEFINED _flash_mla_rpath)
+  set_property(TARGET dcu_kernels APPEND PROPERTY BUILD_RPATH "${_flash_mla_rpath}")
+endif()
 
 target_include_directories(dcu_kernels
   PUBLIC

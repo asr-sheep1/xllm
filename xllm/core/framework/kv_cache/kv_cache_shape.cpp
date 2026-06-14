@@ -362,6 +362,18 @@ void KVCacheShape::apply_device_layout(const ModelArgs& model_args) {
         model_args.kv_lora_rank() + model_args.qk_rope_head_dim();
     value_cache_shape_.reset();
   }
+#elif defined(USE_DCU)
+  // DCU MLA uses a key-only latent cache [blocks, block_size, 1,
+  // kv_lora_rank + qk_rope_head_dim] (no dim transpose, value_cache empty).
+  // This is the layout flash-mla's mha_fwd_kvcache_mla_nope_pe expects.
+  if (model_args.enable_mla()) {
+    CHECK(key_cache_shape_.has_value())
+        << "key_cache_shape is not initialized.";
+    CHECK_GE(key_cache_shape_->size(), 4) << "invalid mla key_cache_shape.";
+    (*key_cache_shape_)[3] =
+        model_args.kv_lora_rank() + model_args.qk_rope_head_dim();
+    value_cache_shape_.reset();
+  }
 #else
   static_cast<void>(model_args);
 #endif
